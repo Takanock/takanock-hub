@@ -42,6 +42,10 @@ export default function LegalChat() {
     autoResizeTextarea(inputRef.current);
   }, [inputValue]);
 
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.focus();
+  }, []);
+
   function resetChat() {
     setHistory([]);
     setMessages([{ role: 'assistant', text: LEGAL_GREETING }]);

@@ -67,6 +67,10 @@ export default function ITChat() {
     }, 100);
   }, []);
 
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.focus();
+  }, []);
+
   function resetChat() {
     setHistory([]);
     setMessages([{ role: 'assistant', text: IT_GREETING }]);

@@ -51,6 +51,10 @@ export default function GISChat() {
     autoResizeTextarea(inputRef.current);
   }, [inputValue]);
 
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.focus();
+  }, []);
+
   function resetChat() {
     setHistory([]);
     setMessages([{ role: 'assistant', text: GIS_GREETING }]);

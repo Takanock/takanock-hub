@@ -43,6 +43,10 @@ export default function AutomationChat() {
     autoResizeTextarea(inputRef.current);
   }, [inputValue]);
 
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.focus();
+  }, []);
+
   function resetChat() {
     setHistory([]);
     setMessages([{ role: 'assistant', text: AUTOMATION_GREETING }]);
