@@ -46,6 +46,19 @@ const ORG_CHART_FIELD_NAMES = {
   fldxPQMU7Dv3W2mjC: 'Email'
 };
 
+// Automation ticket lookup reads from this base/table directly by field ID —
+// separate from AIRTABLE_AUTO_BASE/AIRTABLE_AUTO_TABLE used for new submissions.
+const AUTO_LOOKUP_BASE = 'appPZMqespKQVOfxo';
+const AUTO_LOOKUP_TABLE = 'tblfqTJvzI7IW7OiN';
+const AUTO_LOOKUP_FIELD_IDS = {
+  email: 'fldymoFxBb7YhAdNQ',
+  submitted: 'fldSoFRRWo0gFQysi',
+  name: 'fld1BvvsGxerGLdg3',
+  title: 'fldX8AAS3hM4Eqrwf',
+  description: 'fld8KF8JJNZxelCi3',
+  status: 'fldsoAANG0CSQCF1q'
+};
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -107,8 +120,9 @@ async function airtableCreate(baseId, tableId, fields) {
   return responseBody;
 }
 
-async function airtableList(baseId, tableId, formula, token) {
-  const url = `https://api.airtable.com/v0/${baseId}/${tableId}?filterByFormula=${encodeURIComponent(formula)}&pageSize=100`;
+async function airtableList(baseId, tableId, formula, token, options = {}) {
+  let url = `https://api.airtable.com/v0/${baseId}/${tableId}?filterByFormula=${encodeURIComponent(formula)}&pageSize=100`;
+  if (options.returnFieldsByFieldId) url += '&returnFieldsByFieldId=true';
   const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   const data = await r.json();
   if (!r.ok) {
@@ -326,6 +340,7 @@ async function handleLookup(email, res) {
   const safeEmail = String(email).replace(/"/g, '\\"');
   const submitterFormula = `LOWER({Submitter Email})=LOWER("${safeEmail}")`;
   const requesterFormula = `LOWER({Requester Email})=LOWER("${safeEmail}")`;
+  const autoFormula = `LOWER({${AUTO_LOOKUP_FIELD_IDS.email}})=LOWER("${safeEmail}")`;
 
   // Each table is queried independently and fails silently on its own — a
   // permissions error on one table should never block results from the others.
@@ -338,7 +353,7 @@ async function handleLookup(email, res) {
       console.error('GIS lookup failed:', err.message);
       return [];
     }),
-    airtableList(BASE, AUTO_TABLE, submitterFormula, AIRTABLE_API_KEY).catch((err) => {
+    airtableList(AUTO_LOOKUP_BASE, AUTO_LOOKUP_TABLE, autoFormula, AIRTABLE_API_KEY, { returnFieldsByFieldId: true }).catch((err) => {
       console.error('Automation lookup failed:', err.message);
       return [];
     })
@@ -360,11 +375,11 @@ async function handleLookup(email, res) {
     description: r.fields['Description'] || ''
   }))).concat(autoRecords.map((r) => ({
     type: 'automation',
-    name: r.fields['Submitter Name'] || '',
-    requestType: r.fields['Title'] || 'Untitled',
-    status: r.fields['Status'] || 'New',
-    submittedAt: r.fields['Submitted Date'] || '',
-    description: r.fields['Description'] || ''
+    name: r.fields[AUTO_LOOKUP_FIELD_IDS.name] || '',
+    requestType: r.fields[AUTO_LOOKUP_FIELD_IDS.title] || 'Untitled',
+    status: r.fields[AUTO_LOOKUP_FIELD_IDS.status] || 'New',
+    submittedAt: r.fields[AUTO_LOOKUP_FIELD_IDS.submitted] || '',
+    description: r.fields[AUTO_LOOKUP_FIELD_IDS.description] || ''
   })));
 
   await summarizeRequests(tickets);
