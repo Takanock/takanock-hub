@@ -6,6 +6,7 @@ import ChatInterface from '../components/ChatInterface';
 import ITChat from '../components/ITChat';
 import GISChat from '../components/GISChat';
 import AutomationChat from '../components/AutomationChat';
+import LegalChat from '../components/LegalChat';
 import TicketLookup from '../components/TicketLookup';
 
 export default function Home() {
@@ -63,6 +64,12 @@ export default function Home() {
               style={{ display: requestType === 'automation' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}
             >
               <AutomationChat />
+            </div>
+            <div
+              id="legal-flow"
+              style={{ display: requestType === 'legal' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}
+            >
+              <LegalChat />
             </div>
           </div>
         </section>

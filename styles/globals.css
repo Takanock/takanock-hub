@@ -230,7 +230,7 @@ main {
   flex: 1;
   min-height: 0;
 }
-#it-flow, #gis-flow, #automation-flow {
+#it-flow, #gis-flow, #automation-flow, #legal-flow {
   flex: 1;
   flex-direction: column;
   min-height: 0;
