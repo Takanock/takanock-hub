@@ -159,6 +159,15 @@ function deriveEmail(fullName) {
   return local ? `${local}@takanock.com` : '';
 }
 
+// The chat model occasionally echoes single-select values back wrapped in
+// stray quote characters (e.g. '"Legal and Operations"'), which Airtable
+// then treats as a literal, non-matching option string. Strip them before
+// they reach single-select fields.
+function stripSurroundingQuotes(value) {
+  if (typeof value !== 'string') return value;
+  return value.trim().replace(/^["']+|["']+$/g, '').trim();
+}
+
 async function handleSubmit(record, table, res) {
   const name = record.name || '';
   const department = record.department || '';
@@ -214,11 +223,11 @@ async function handleSubmit(record, table, res) {
       'Title': record.title || '',
       'Submitter Name': name,
       'Submitter Email': deriveEmail(name),
-      'Department': department,
+      'Department': stripSurroundingQuotes(department),
       'Description': record.description || '',
       'Business Problem': record.businessProblem || '',
       'Current Process': record.currentProcess || '',
-      'Submitter Priority': record.priority || '',
+      'Submitter Priority': stripSurroundingQuotes(record.priority || ''),
       'Status': 'New',
       'Submitted Date': now.slice(0, 10)
     };
