@@ -4,9 +4,10 @@
 // Required environment variables:
 //   ANTHROPIC_API_KEY        — Anthropic API key for chat/ticket summarization
 //   AIRTABLE_API_KEY         — Airtable token used for all writes and IT/GIS/Automation reads
-//   AIRTABLE_HUB_BASE        — base ID shared by the IT, GIS, and Automation tables
+//   AIRTABLE_HUB_BASE        — base ID shared by the IT and GIS tables
 //   AIRTABLE_IT_TABLE        — IT Help Desk table ID
 //   AIRTABLE_GIS_TABLE       — GIS Request table ID
+//   AIRTABLE_AUTO_BASE       — base ID for the Automation Request table
 //   AIRTABLE_AUTO_TABLE      — Automation Request table ID
 //   AIRTABLE_LEGAL_TABLE     — Legal Requests table ID
 //
@@ -17,6 +18,7 @@
 const BASE = process.env.AIRTABLE_HUB_BASE;
 const IT_TABLE = process.env.AIRTABLE_IT_TABLE;
 const GIS_TABLE = process.env.AIRTABLE_GIS_TABLE;
+const AUTO_BASE = process.env.AIRTABLE_AUTO_BASE;
 const AUTO_TABLE = process.env.AIRTABLE_AUTO_TABLE;
 const LEGAL_TABLE = process.env.AIRTABLE_LEGAL_TABLE;
 
@@ -206,6 +208,8 @@ async function handleSubmit(record, table, res) {
   }
 
   if (table === 'automation') {
+    console.log('Automation submit — AIRTABLE_AUTO_BASE:', AUTO_BASE, 'AIRTABLE_AUTO_TABLE:', AUTO_TABLE);
+
     const fields = {
       'Title': record.title || '',
       'Submitter Name': name,
@@ -225,7 +229,7 @@ async function handleSubmit(record, table, res) {
     const estimatedTimeSavings = Number(record.estimatedTimeSavings);
     if (Number.isFinite(estimatedTimeSavings)) fields['fldt4qczRirWXGsX2'] = estimatedTimeSavings;
 
-    const data = await airtableCreate(BASE, AUTO_TABLE, fields);
+    const data = await airtableCreate(AUTO_BASE, AUTO_TABLE, fields);
     return res.status(200).json({ id: data.id });
   }
 
