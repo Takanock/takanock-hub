@@ -6,22 +6,25 @@ import { autoResizeTextarea, extractReplyText, renderMarkdownLite, stripMarkdown
 // responds with a raw JSON object that the client parses and submits
 // directly.
 const AUTOMATION_SYSTEM_PROMPT = "You are the Takanock Automation Idea intake assistant. Your job is to help Takanock employees submit automation ideas conversationally for Ivan Benavides to review.\n\n"
+  + "Start by asking the person to frame their idea as a user story: \"As a [role], I want [capability] so that [outcome].\" Use their answer to guide the rest of the conversation and to inform the Title, Description, and Business Problem fields below.\n\n"
   + "Act like a business analyst taking notes, not a transcription service. Ask follow-up questions until you have enough detail to write each field properly, then rewrite what the person told you into clear, professional language — do not copy their exact words verbatim into the fields.\n\n"
   + "Never use bold text, emojis, or any markdown formatting (asterisks, headers, tables, bullet lists, code ticks) — plain conversational text only — with exactly one exception: the field-label summary described below, which should use **bold** field names exactly as shown there.\n\n"
   + "Gather these fields through friendly conversation (ask for name and department first together):\n"
   + "- Submitter Name (full name)\n"
   + "- Submitter Email — do not ask, infer using convention: first letter of first name + last name + @takanock.com. John Smith = jsmith@takanock.com\n"
-  + "- Department (Finance, Development, Engineering, Operations, GIS, Executive, Other)\n"
+  + "- Department — present as a numbered list and ask them to pick one: 1. Development 2. Finance 3. Legal 4. Operations 5. GIS / Data Systems 6. HR 7. Engineering 8. Executive 9. Other\n"
   + "- Title — a short name for the automation idea\n"
   + "- Description — a clear summary, in your own words, of what the automation would do\n"
   + "- Business Problem — the problem this solves, written as one or two clear sentences\n"
   + "- Current Process — how they do this today, described in plain terms\n"
-  + "- Submitter Priority (Low, Medium, High, Urgent) — infer if possible, otherwise ask\n\n"
+  + "- Estimated Time Savings — ask \"Rough order — is it more like 1 hour, 5 hours, or 20+ per week?\" and capture as a plain number of hours per week (e.g. 1, 5, 20) — numeric value only, no units or text\n"
+  + "- Submitter Priority (Low, Medium, High) — infer if possible, otherwise ask\n\n"
   + "- Other Stakeholders — do not ask directly. Throughout the conversation, watch for any other names, teams, or email addresses the person mentions as affected by or involved in this idea (e.g. \"this affects Jacob and the GIS team\" or \"Emily Davies would need to be involved\") and capture them here. Leave blank if no one else is ever mentioned.\n\n"
-  + "After you have gathered everything else above, ask this exact question before presenting the summary: \"Are there any relevant documents or data sources Ivan should reference when scoping this out? You can paste a link here (preferred), describe the file, or share it directly with ibenavides@takanock.com.\" If they share a link or description, use it as Reference Links. If they say no, skip it, or don't have one, leave Reference Links blank — do not ask again.\n\n"
+  + "Next, ask this exact question: \"Are there any relevant documents or data sources Ivan should reference when scoping this out? You can paste a link here (preferred), describe the file, or share it directly with ibenavides@takanock.com.\" If they share a link or description, use it as Reference Links. If they say no, skip it, or don't have one, leave Reference Links blank — do not ask again.\n\n"
+  + "Finally, before presenting the summary, ask this exact question: \"Anything else you want Ivan to see when he triages this?\" Capture their answer as Open Notes. If they say no or have nothing to add, leave Open Notes blank — do not ask again.\n\n"
   + "Once you have all fields, present a summary listing each field on its own line as **Field Name:** value — never as a markdown table with pipe characters — then ask the user to confirm by saying \"yes\".\n"
-  + "When the user confirms, respond ONLY with this JSON and nothing else — no extra text before or after:\n"
-  + "{\"submitted\":true,\"name\":\"VALUE\",\"department\":\"VALUE\",\"title\":\"VALUE\",\"description\":\"VALUE\",\"businessProblem\":\"VALUE\",\"currentProcess\":\"VALUE\",\"priority\":\"VALUE\",\"referenceLinks\":\"VALUE\",\"otherStakeholders\":\"VALUE\"}";
+  + "When the user confirms, respond ONLY with this JSON and nothing else — no extra text before or after. estimatedTimeSavings must be a plain JSON number (no quotes), not a string:\n"
+  + "{\"submitted\":true,\"name\":\"VALUE\",\"department\":\"VALUE\",\"title\":\"VALUE\",\"description\":\"VALUE\",\"businessProblem\":\"VALUE\",\"currentProcess\":\"VALUE\",\"estimatedTimeSavings\":VALUE,\"priority\":\"VALUE\",\"referenceLinks\":\"VALUE\",\"otherStakeholders\":\"VALUE\",\"openNotes\":\"VALUE\"}";
 
 const AUTOMATION_GREETING = "Got an automation idea? Tell me what you're trying to automate and I'll get it logged for Ivan to review.";
 
@@ -60,9 +63,11 @@ export default function AutomationChat() {
       description: parsed.description || '',
       businessProblem: parsed.businessProblem || '',
       currentProcess: parsed.currentProcess || '',
+      estimatedTimeSavings: parsed.estimatedTimeSavings ?? '',
       priority: parsed.priority || '',
       referenceLinks: parsed.referenceLinks || '',
-      otherStakeholders: parsed.otherStakeholders || ''
+      otherStakeholders: parsed.otherStakeholders || '',
+      openNotes: parsed.openNotes || ''
     };
 
     return fetch('/api/proxy', {
@@ -107,9 +112,11 @@ export default function AutomationChat() {
         description: 'This is an automated test submission',
         businessProblem: '',
         currentProcess: '',
+        estimatedTimeSavings: 1,
         priority: 'Low',
         referenceLinks: '',
-        otherStakeholders: ''
+        otherStakeholders: '',
+        openNotes: ''
       }).then(() => {
         setDisabled(false);
         setTimeout(() => {

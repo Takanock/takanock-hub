@@ -220,6 +220,10 @@ async function handleSubmit(record, table, res) {
     };
     if (record.referenceLinks) fields['Reference Links'] = record.referenceLinks;
     if (record.otherStakeholders) fields['Other Stakeholders'] = record.otherStakeholders;
+    if (record.openNotes) fields['fldfWSluvZee8v5nA'] = record.openNotes;
+
+    const estimatedTimeSavings = Number(record.estimatedTimeSavings);
+    if (Number.isFinite(estimatedTimeSavings)) fields['fldt4qczRirWXGsX2'] = estimatedTimeSavings;
 
     const data = await airtableCreate(BASE, AUTO_TABLE, fields);
     return res.status(200).json({ id: data.id });
