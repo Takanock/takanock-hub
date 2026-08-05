@@ -147,7 +147,7 @@ export default function ITChat() {
       body: JSON.stringify({
         messages: newHistory,
         system: IT_SYSTEM_PROMPT,
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-sonnet-4-6',
         max_tokens: 1000
       })
     })
