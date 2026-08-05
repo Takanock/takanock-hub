@@ -79,7 +79,7 @@ export default function ChatInterface({ onOpenIntakeForm }) {
       body: JSON.stringify({
         messages: newHistory,
         system: SYSTEM_PROMPT,
-        model: 'claude-sonnet-4-6',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1000,
         checkFaq: true
       })
