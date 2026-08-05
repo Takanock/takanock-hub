@@ -79,7 +79,8 @@ export default function ChatInterface({ onOpenIntakeForm }) {
         messages: newHistory,
         system: SYSTEM_PROMPT,
         model: 'claude-sonnet-4-6',
-        max_tokens: 1000
+        max_tokens: 1000,
+        checkFaq: true
       })
     })
       .then((r) => r.json())

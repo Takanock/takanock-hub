@@ -10,6 +10,7 @@
 //   AIRTABLE_AUTO_BASE       — base ID for the Automation Request table
 //   AIRTABLE_AUTO_TABLE      — Automation Request table ID
 //   AIRTABLE_LEGAL_TABLE     — Legal Requests table ID
+//   AIRTABLE_FAQ_TABLE       — FAQ table ID (base appvNDBoDDGFshd5J, shared with Org Chart)
 //
 // The chat route also reads the Org Chart table (base appvNDBoDDGFshd5J,
 // table tblg3HtkMjh3qVq9S) via AIRTABLE_API_KEY to answer "who do I contact"
@@ -21,6 +22,7 @@ const GIS_TABLE = process.env.AIRTABLE_GIS_TABLE;
 const AUTO_BASE = process.env.AIRTABLE_AUTO_BASE;
 const AUTO_TABLE = process.env.AIRTABLE_AUTO_TABLE;
 const LEGAL_TABLE = process.env.AIRTABLE_LEGAL_TABLE;
+const FAQ_TABLE = process.env.AIRTABLE_FAQ_TABLE;
 
 const IT_DEPARTMENTS = ['Finance', 'Development', 'Engineering', 'Operations', 'GIS', 'Executive', 'Other'];
 const IT_REQUEST_TYPES = ['Permissions Issue', 'Slack', 'Sharepoint', 'Hardware Issue', 'New Dataset', 'Other'];
@@ -59,6 +61,16 @@ const AUTO_LOOKUP_FIELD_IDS = {
   status: 'fldsoAANG0CSQCF1q'
 };
 
+// FAQ table lives in the same base as the Org Chart, keyed by field ID.
+const FAQ_BASE = 'appvNDBoDDGFshd5J';
+const FAQ_FIELD_IDS = {
+  question: 'fldGu5EfFjDyNOsM0',
+  answer: 'fldHHB0mv7VCzEPSu',
+  count: 'fldqkyAKbmlsIYanK',
+  isFaq: 'fldwJoaMcxuEegm5X',
+  lastAsked: 'fldFJUAqPJJuIKTrE'
+};
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -86,6 +98,9 @@ export default async function handler(req, res) {
     }
     if (body.airtable_record && body.table) {
       return await handleSubmit(body.airtable_record, body.table, res);
+    }
+    if (body.messages && body.checkFaq) {
+      return await handleAssistantChat(body, res);
     }
     if (body.messages) {
       return await handleChat(body, res);
@@ -116,6 +131,24 @@ async function airtableCreate(baseId, tableId, fields) {
   if (!res.ok) {
     console.error('Airtable error:', JSON.stringify(responseBody));
     throw new Error(responseBody.error?.message || 'Airtable write failed');
+  }
+  return responseBody;
+}
+
+async function airtableUpdate(baseId, tableId, recordId, fields) {
+  const url = `https://api.airtable.com/v0/${baseId}/${tableId}/${recordId}`;
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ fields })
+  });
+  const responseBody = await res.json();
+  if (!res.ok) {
+    console.error('Airtable update error:', JSON.stringify(responseBody));
+    throw new Error(responseBody.error?.message || 'Airtable update failed');
   }
   return responseBody;
 }
@@ -396,6 +429,150 @@ async function handleLookup(email, res) {
   }));
 
   return res.status(200).json(publicTickets);
+}
+
+/* -----------------------------------------------------------------
+ * FAQ gate (Assistant tab only)
+ * --------------------------------------------------------------- */
+
+const FAQ_CLASSIFY_TOOL = {
+  name: 'classify_faq_question',
+  description: 'Classify a single user message from the Takanock Assistant chat against the company FAQ table.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      category: {
+        type: 'string',
+        enum: ['it_gis_automation', 'faq_answered', 'faq_unanswered', 'no_match', 'general'],
+        description: 'it_gis_automation: fundamentally an IT Help Desk, GIS Request, or Automation Idea topic that should be a formal tracked request, regardless of any FAQ match. faq_answered: semantically matches an existing FAQ entry that has a non-empty answer. faq_unanswered: matches an existing FAQ entry whose answer is currently empty. no_match: a genuine standalone question that does not match any FAQ entry and is not IT/GIS/Automation. general: casual conversation, greetings, thanks, or a "who do I contact" style question — not a discrete FAQ-style question.'
+      },
+      matchedRecordId: {
+        type: 'string',
+        description: 'The Airtable record ID of the matched FAQ entry when category is faq_answered or faq_unanswered. Empty string otherwise.'
+      },
+      suggestedReply: {
+        type: 'string',
+        description: 'Only when category is it_gis_automation: one short, warm, natural sentence suggesting they submit it as a formal request via the Submit a Request tab so it gets tracked and followed up on — a casual aside, not a formal redirect. Empty string for every other category.'
+      }
+    },
+    required: ['category', 'matchedRecordId', 'suggestedReply']
+  }
+};
+
+async function classifyFaqQuestion(userText, faqRecords) {
+  const faqList = faqRecords.map((r) => {
+    const question = r.fields[FAQ_FIELD_IDS.question] || '';
+    const answer = r.fields[FAQ_FIELD_IDS.answer] || '';
+    return `Record ID: ${r.id}\nQuestion: ${question}\nAnswer: ${answer || '(no answer yet)'}`;
+  }).join('\n\n');
+
+  const systemPrompt = "You classify a single user message from the Takanock Assistant chat against the company FAQ table.\n\n"
+    + "First decide if the message is fundamentally an IT Help Desk, GIS Request, or Automation Idea topic — something that would need to be submitted as a formal ticket (access/permissions/hardware/software issues, GIS/mapping/data/site requests, or an automation idea). If so, category is it_gis_automation regardless of any FAQ match, and suggestedReply must be a brief, warm, one-sentence nudge toward the Submit a Request tab — a natural aside, not a formal redirect.\n\n"
+    + "Otherwise, decide if the message is a genuine standalone question (something with a real answer someone could look up) versus casual conversation — greetings, thanks, small talk, or a \"who do I contact for X\" question (those are handled elsewhere and should be classified general).\n\n"
+    + "For genuine standalone questions, compare against the FAQ entries below and find the closest semantic match — the same underlying question even if worded differently. If a good match exists and its answer is non-empty, category is faq_answered with that record's ID. If a good match exists but its answer is empty, category is faq_unanswered with that record's ID. If there is no good match, category is no_match with an empty record ID.\n\n"
+    + "If none of the above apply, category is general.\n\n"
+    + (faqRecords.length ? `Existing FAQ entries:\n${faqList}` : 'There are no existing FAQ entries yet.');
+
+  const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 300,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userText }],
+      tools: [FAQ_CLASSIFY_TOOL],
+      tool_choice: { type: 'tool', name: 'classify_faq_question' }
+    })
+  });
+
+  const data = await anthropicRes.json();
+  if (!anthropicRes.ok) {
+    throw new Error((data.error && data.error.message) || 'FAQ classification request failed');
+  }
+
+  const toolUse = (data.content || []).find((c) => c.type === 'tool_use');
+  if (!toolUse) throw new Error('FAQ classifier did not return a tool call');
+  return toolUse.input;
+}
+
+// Runs before the normal Assistant-tab chat call: matches the user's latest
+// message against the FAQ table and short-circuits with a direct answer,
+// a pending-question notice, a newly logged question, or an IT/GIS/Automation
+// nudge. Falls through to the normal chat call for casual conversation
+// ("general") or if anything about the FAQ gate itself fails — an FAQ hiccup
+// should never block the assistant from responding.
+async function handleAssistantChat(body, res) {
+  const messages = body.messages || [];
+  const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
+  const userText = lastUserMessage ? String(lastUserMessage.content || '').trim() : '';
+
+  if (!userText || !FAQ_TABLE) return handleChat(body, res);
+
+  let faqRecords = [];
+  try {
+    faqRecords = await airtableList(FAQ_BASE, FAQ_TABLE, 'TRUE()', AIRTABLE_API_KEY, { returnFieldsByFieldId: true });
+  } catch (err) {
+    console.error('FAQ fetch failed:', err.message);
+    return handleChat(body, res);
+  }
+
+  let classification;
+  try {
+    classification = await classifyFaqQuestion(userText, faqRecords);
+  } catch (err) {
+    console.error('FAQ classification failed:', err.message);
+    return handleChat(body, res);
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (classification.category === 'it_gis_automation') {
+    const reply = classification.suggestedReply
+      || 'You can submit that through the Submit a Request tab so it gets tracked and followed up on.';
+    return res.status(200).json({ reply });
+  }
+
+  if (classification.category === 'faq_answered' || classification.category === 'faq_unanswered') {
+    const record = faqRecords.find((r) => r.id === classification.matchedRecordId);
+    if (record) {
+      const currentCount = Number(record.fields[FAQ_FIELD_IDS.count]) || 0;
+      airtableUpdate(FAQ_BASE, FAQ_TABLE, record.id, {
+        [FAQ_FIELD_IDS.count]: currentCount + 1,
+        [FAQ_FIELD_IDS.lastAsked]: today
+      }).catch((err) => console.error('FAQ update failed:', err.message));
+
+      if (classification.category === 'faq_answered') {
+        const answer = record.fields[FAQ_FIELD_IDS.answer] || '';
+        if (answer) return res.status(200).json({ reply: answer });
+      } else {
+        return res.status(200).json({
+          reply: 'That question has been asked before and is pending an answer. Someone will follow up soon.'
+        });
+      }
+    }
+  }
+
+  if (classification.category === 'no_match') {
+    airtableCreate(FAQ_BASE, FAQ_TABLE, {
+      [FAQ_FIELD_IDS.question]: userText,
+      [FAQ_FIELD_IDS.answer]: '',
+      [FAQ_FIELD_IDS.count]: 1,
+      [FAQ_FIELD_IDS.lastAsked]: today,
+      [FAQ_FIELD_IDS.isFaq]: false
+    }).catch((err) => console.error('FAQ log failed:', err.message));
+    return res.status(200).json({
+      reply: "I don't have an answer for that yet, but I've logged your question. Someone will follow up with an answer."
+    });
+  }
+
+  // 'general' (casual chat, org-chart contact questions) or a matched
+  // record that vanished between fetch and use — behave as before.
+  return handleChat(body, res);
 }
 
 /* -----------------------------------------------------------------
