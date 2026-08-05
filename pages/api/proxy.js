@@ -541,10 +541,14 @@ async function handleAssistantChat(body, res) {
     const record = faqRecords.find((r) => r.id === classification.matchedRecordId);
     if (record) {
       const currentCount = Number(record.fields[FAQ_FIELD_IDS.count]) || 0;
-      airtableUpdate(FAQ_BASE, FAQ_TABLE, record.id, {
-        [FAQ_FIELD_IDS.count]: currentCount + 1,
-        [FAQ_FIELD_IDS.lastAsked]: today
-      }).catch((err) => console.error('FAQ update failed:', err.message));
+      const updateFields = { [FAQ_FIELD_IDS.lastAsked]: today };
+      // Only bump Count if it was already > 0 — i.e. the question was
+      // organically asked through the onboarding hub first. Questions
+      // logged purely from the Assistant Hub never get a Count, so they
+      // can't accidentally cross the threshold that surfaces them there.
+      if (currentCount > 0) updateFields[FAQ_FIELD_IDS.count] = currentCount + 1;
+      airtableUpdate(FAQ_BASE, FAQ_TABLE, record.id, updateFields)
+        .catch((err) => console.error('FAQ update failed:', err.message));
 
       if (classification.category === 'faq_answered') {
         const answer = record.fields[FAQ_FIELD_IDS.answer] || '';
@@ -558,10 +562,12 @@ async function handleAssistantChat(body, res) {
   }
 
   if (classification.category === 'no_match') {
+    // Count is intentionally left unset — this question was logged from
+    // the Assistant Hub, not organically asked through the onboarding hub,
+    // so it must never reach the Count threshold that surfaces FAQs there.
     airtableCreate(FAQ_BASE, FAQ_TABLE, {
       [FAQ_FIELD_IDS.question]: userText,
       [FAQ_FIELD_IDS.answer]: '',
-      [FAQ_FIELD_IDS.count]: 1,
       [FAQ_FIELD_IDS.lastAsked]: today,
       [FAQ_FIELD_IDS.isFaq]: false
     }).catch((err) => console.error('FAQ log failed:', err.message));
